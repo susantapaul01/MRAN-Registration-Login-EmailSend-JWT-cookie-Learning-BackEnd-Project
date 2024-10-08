@@ -23,6 +23,7 @@ const dataSchema = new mongoose.Schema(
         phone: {
             type: String,
             required: true,
+            unique: true,
         },
         image: {
             type: String,

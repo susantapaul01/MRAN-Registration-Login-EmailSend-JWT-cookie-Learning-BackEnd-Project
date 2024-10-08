@@ -13,6 +13,7 @@ export const URL_INCODE = true
 export const REQUEST_TIME_LIMIT = 20*60*1000
 export const REQUEST_NUMBER = 200
 
+export const PASS_KEY = "275idiem8496"
 
 // Email configuration Mr Rabbil
 // export const EMAIL_HOST = "mail.teamrabbil.com"

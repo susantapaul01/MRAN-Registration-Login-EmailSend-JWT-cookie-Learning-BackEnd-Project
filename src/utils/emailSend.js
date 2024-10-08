@@ -17,7 +17,7 @@ export const EmailSend = async (emailTo, emailSubject, emailText) => {
     });
     
     let mailOptions = {
-        from: `Maddison Foo Koch <${EMAIL_USER}>`,
+        from: `OSTAD MERN-6 <${EMAIL_USER}>`,
         to: emailTo,
         subject: emailSubject,
         html: `
@@ -96,7 +96,7 @@ export const EmailSend = async (emailTo, emailSubject, emailText) => {
                 </div>
 
                 <div class="content">
-                  <h2>Hi there, ${emailText}</h2>
+                  <h2>Your OTP verification code: ${emailText}</h2>
                   <p>Thank you for signing up for our service. We're excited to have you on board!</p>
                   <p>If you have any questions, feel free to reach out to our support team.</p>
 

@@ -1,34 +1,30 @@
 import mongoose from "mongoose";
 import userModel from "../models/userModel.js";
-import md5 from "md5";
+// import md5 from "md5";
 import { TokenEncode } from "../utils/tokenUtils.js";
 import { EmailSend } from "../utils/emailSend.js";
+import OTPModel from "../models/otpModel.js";
+import bcrypt from "bcrypt";
+import { PASS_KEY } from "../config/config.js";
 let ObjectID = mongoose.Types.ObjectId;
 //=== Create User
 export const Registration = async (req, res) => {
     try {
+        let salt = 10
         let data = req.body;
         let email = data.email;
-            data.password = md5(req.body['password']);
+            // data.password = md5(req.body['password']);
+
+        const hashedPassword = await bcrypt.hash(req.body.password, salt);
+        data.password = hashedPassword;
         let user = await userModel.find({ 'email': email });
         if(user.length> 0) {
-            return res.status(409).json({ status: "error", messege: "already Registered"})
+            return res.status(400).json({ status: "error", messege: "already Registered"})
         }
         else {
             let result = await userModel.create(data)
-            return res.status(200).json({ status: "success", messege: "Registration Successful", data: result });
+            return res.status(201).json({ status: "success", messege: "Registration Successful", data: result });
         }
-    }
-    catch(e) {
-        return res.json({ status: "success", messege: e.toString() })
-    }
-}
-
-
-//=== User VerifyLogin
-export const VerifyLogin = async (req, res) => {
-    try {
-            return res.json({ status: "success", messege: "VerifyLogin Successful" })
     }
     catch(e) {
         return res.json({ status: "success", messege: e.toString() })
@@ -38,17 +34,22 @@ export const VerifyLogin = async (req, res) => {
 
 //=== User Login
 export const Login = async (req, res) => {
+    const { email, password } = req.body;
     try {
-        let data = req.body;
-            data.password = md5(req.body.password);
-        let matchStage = { $match: data};
-        let projection = { $project: { "email": 1, "firstName": 1 }};
-        let user = await userModel.aggregate([
-            matchStage,
-            projection
-        ])
-        if(user.length > 0) {
-            let token = TokenEncode(user[0]['email'], user[0]['_id']);
+        let salt = 10
+        // Find the user by email
+        const user = await userModel.findOne({ "email": email });
+        console.log(user);
+        if (!user) {
+            return res.status(400).json({ status: "success", message: 'Invalid email or password' });
+          }
+        // data.password = md5(req.body.password);
+        // === Compare the plain-text password with the hashed password
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Invalid email or password' });
+        }
+        let token = TokenEncode(user['email'], user['_id']);
             // cookie Setting
             let options = {
                 maxAge: 5*24*60*60*1000,
@@ -58,9 +59,6 @@ export const Login = async (req, res) => {
             }
             res.cookie("Token", token, options);
             return res.status(200).json({ status: "success", messege: "Login Successful", data: user})
-        } else {
-            return res.status(404).json({ status: "error", messege: "email or password dose not match."});
-        }
     }
     catch(e) {
         return res.status(404).json({ status: "success", messege: e.toString() })
@@ -109,3 +107,91 @@ export const SendEmail = async (req, res) => {
     }
 }
 
+
+//=== Send OTP & VerifyEmail
+export const VerifyEmail = async (req, res) => {
+    let email = req.params.email;
+    let otp =  Math.floor(100000 + Math.random() * 900000);
+    try {
+        let userCount = await userModel.aggregate([
+            { $match: { 'email': email}},
+            { $count: "total" }
+        ])
+        // console.log(userCount[0].total);
+        if(userCount[0].total===1) {
+            await OTPModel.updateOne(
+                { 'email': email },
+                { 
+                    otp,
+                    status: 0
+                },
+                { upsert: true, new: true}
+            )
+            let SendEmail = await EmailSend(email, "OTP Verification Code", otp);
+            return res.status(200).json({ status: "success", messege: "Verify Email Successful", SendEmail: SendEmail })
+        }
+        else {
+            return res.status(404).json({ status: "fail", messege: "No user found"})
+        }
+    }
+    catch(e) {
+        return res.json({ status: "fail", messege: e.toString() });
+    }
+}
+
+
+
+export const VerifyOTP = async (req, res) => {
+    try {
+        let email = req.params.email;
+        let otp = parseInt(req.params.otp);
+
+        let OTPCount = await OTPModel.aggregate([
+            { $match: { "email": email, "otp": otp, 'status': 0}},
+            { $count: 'total'}
+        ])
+        // console.log(OTPCount);
+        if(OTPCount[0].total===1) {
+            let updateData = await OTPModel.updateOne(
+                { email, otp, 'status': 0},
+                { otp, status: 1}
+            )
+            return res.status(200).json({ status: "success", messege: "Verify OTP Email Successful", data: updateData })
+        }
+        else {
+            return res.status(401).json({ status: "fail", messege: "Email or otp not matching" });
+        }
+    }
+    catch(e) {
+        return res.json({ status: "fail", messege: e.toString() });
+    }
+}
+
+
+export const ResetPassword = async (req, res) => {
+    try {
+        let email = req.params.email;
+        let otp = parseInt(req.params.otp);
+        let { password } = req.body;
+
+        let data = await OTPModel.aggregate([
+            { $match: { email, otp, 'status': 1}},
+            { $count: 'total'}
+        ])
+        // console.log(data)
+        if(data[0].total===1) {
+            let resetPassword = await userModel.updateOne({email}, {"password": password });
+            await OTPModel.updateOne(
+                { email},
+                { otp: null, status: null}
+            )
+             return res.status(200).json({ status: "success", messege: "newPassword Successful", data: resetPassword })
+        }
+        else {
+            return res.status(401).json({ status: "fail", messege: "Email or otp not matching" });
+        }
+    }
+    catch(e) {
+        return res.json({ status: "fail", messege: e.toString() });
+    }
+}
